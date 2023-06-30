@@ -26,5 +26,5 @@
 [Contact](#contact)
 
 ### Introduction
-This is the repository for my NLP project at HUST. The project focuses on the task of named entity recognition (NER) on the BioreD dataset. In this repository, I provide the training code, pre-trained models, and data processing code. Additionally, I have included a simple web app for utilizing the NER system.
+This is the repository for my NLP project at HUST. The project focuses on the task of named entity recognition (NER) and relation extraction (RE) on the BioreD dataset. In this repository, I provide the training code, pre-trained models, and data processing code. Additionally, I have included a simple web app for utilizing the NER system.
 
