@@ -20,12 +20,18 @@ import re
 import warnings
 warnings.filterwarnings("ignore")
 import spacy
+import torch.nn as nn
+from transformers import AutoModel, AutoTokenizer
+from transformers.modeling_outputs import TokenClassifierOutput
+from transformers.models.bert.modeling_bert import BertPreTrainedModel
+from transformers.utils import logging
+
 # import nltk
 
 def split_text_by_spacy(text, entity= None, max_length=512, single_sentence=True):
     """Split sentence using spacy"""
     max_length = max_length - 2
-    nlp = spacy.load("en_core_sci_md-0.5.1/en_core_sci_md/en_core_sci_md-0.5.1")
+    nlp = spacy.load("en_core_sci_md")
 
     sentences = nlp(text).sents
     sentences =[str(i) for i in sentences if len(i) > 1]
@@ -53,7 +59,7 @@ def split_text_by_spacy(text, entity= None, max_length=512, single_sentence=True
     else:
         return 0
 def split_text_by_spacy_example(text):
-    nlp = spacy.load("en_core_sci_md-0.5.1/en_core_sci_md/en_core_sci_md-0.5.1")
+    nlp = spacy.load("en_core_sci_md")
 
     sentences = nlp(text).sents
     sentences =[str(i) for i in sentences if len(i) > 1]
@@ -120,7 +126,7 @@ def convert_text_to_id(text, tokenizer, entities, label_map, max_seq_length=256)
 
 # convert pubtator to bio format
 def pubtator_to_bio(pubtator_file: str, tokenizer: BertTokenizer,
-                    not_use: List[str] =['OrganismTaxon', 'CellLine'],
+                    not_use: List[str] = [], # ['OrganismTaxon', 'CellLine'],
                     max_seq_length: int = 512,                    
                     labels: List[str] = None,
                     verbose: int = 1
@@ -177,13 +183,13 @@ def pubtator_to_bio(pubtator_file: str, tokenizer: BertTokenizer,
             assert len(encoded_labels) == max_seq_length
 
             if ex_index < 2 and verbose == 1:
-                logger.info("*** Example ***")
-                logger.info("guid: %s", pmid+'%{}'.format(i))
-                logger.info("tokens: %s", tokens)
-                logger.info("input_ids: %s", input_ids)
-                logger.info("input_mask: %s", attention_mask)
-                logger.info("token_type_ids: %s", token_type_ids)
-                logger.info("label_ids: %s", encoded_labels)
+                print("*** Example ***")
+                print("guid: %s", pmid+'%{}'.format(i))
+                print("tokens: %s", tokens)
+                print("input_ids: %s", input_ids)
+                print("input_mask: %s", attention_mask)
+                print("token_type_ids: %s", token_type_ids)
+                print("label_ids: %s", encoded_labels)
 
             feature.append(
                 InputFeatures(
@@ -267,9 +273,10 @@ def get_labels(path: str= None) -> List[str]:
             labels = ["O"] + labels
         return labels
     else:
-        return ['B-GeneOrGeneProduct', 'I-GeneOrGeneProduct', 'B-DiseaseOrPhenotypicFeature', \
-         'I-DiseaseOrPhenotypicFeature', 'B-ChemicalEntity', 'B-SequenceVariant', 'I-ChemicalEntity', 'I-SequenceVariant', \
-           'O']
+        return ['B-GeneOrGeneProduct', 'I-GeneOrGeneProduct', 'B-DiseaseOrPhenotypicFeature', 
+         'I-DiseaseOrPhenotypicFeature', 'B-ChemicalEntity', 'I-ChemicalEntity', 'B-SequenceVariant', 'I-SequenceVariant',
+          'B-OrganismTaxon', 'I-OrganismTaxon', 'B-CellLine', 'I-CellLine',
+           'O'] # 'OrganismTaxon', 'CellLine'
 
 def save_pickle(file, path, file_name):
     """Save file to pickle format"""
@@ -290,3 +297,41 @@ def open_pickle(path):
     with open(path, 'rb') as f:
         return pickle.load(f)
 
+
+
+class BioBERTCRF(BertPreTrainedModel):
+    def __init__(self, config, model_dir, num_labels=9):
+        super().__init__(config)
+        self.bert = AutoModel.from_pretrained("dmis-lab/biobert-base-cased-v1.1")
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        self.crf = nn.CRF(config.num_labels, batch_first=True)
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        labels=None,
+    ):
+        outputs = self.bert(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+        )
+
+        sequence_output = outputs.last_hidden_state
+        sequence_output = self.dropout(sequence_output)
+        logits = self.classifier(sequence_output)
+
+        if labels is not None:
+            loss = -self.crf(logits, labels, mask=attention_mask.byte())
+            return TokenClassifierOutput(loss=loss, logits=logits)
+
+        return TokenClassifierOutput(logits=logits)
