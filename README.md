@@ -119,4 +119,4 @@ streamlit run NER_BioRED/main.py
 }
 ```
 ### Contact
-If you have any question, please contact us via [email](long.nd204580@sis.hust.edu.vn).
+If you have any question, please contact me via [email](long.nd204580@sis.hust.edu.vn).
